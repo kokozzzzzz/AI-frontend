@@ -4,7 +4,7 @@
 
 - 应用入口：`src/main.js`
 - 开发地址：<http://localhost:5173>
-- 后端项目：FastAPI-week2（需单独启动，默认 `http://localhost:8000`）
+- 后端项目：[FastAPI-week2](https://github.com/kokozzzzzz/fastapi-week2)（需单独启动，默认 `http://localhost:8000`）
 
 ## 技术栈
 
@@ -70,7 +70,7 @@ AI-frontend/
 ### 2. 克隆项目并安装依赖
 
 ```bash
-git clone <仓库地址>
+git clone https://github.com/kokozzzzzz/AI-frontend.git
 cd AI-frontend
 npm install
 ```
