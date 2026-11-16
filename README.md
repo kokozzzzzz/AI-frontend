@@ -1,6 +1,6 @@
 # AI Frontend
 
-一个用于练习前后端联调的 Vue 3 前端项目。页面提供按用户 ID 查询用户信息的功能，通过 Axios 调用 FastAPI 后端（默认 `http://localhost:8000`）的 `GET /users/{user_id}` 接口，并以「字段名：值」的形式展示查询结果。
+一个用于练习前后端联调与登录鉴权的 Vue 3 前端项目。通过 Axios 调用 FastAPI 后端（默认 `http://localhost:8000`），提供用户注册、表单登录、JWT 携带、路由守卫和个人中心页面。
 
 - 应用入口：`src/main.js`
 - 开发地址：<http://localhost:5173>
@@ -14,7 +14,7 @@
 | 框架 | Vue 3（Composition API / `<script setup>`） |
 | 构建工具 | Vite 8 |
 | HTTP 客户端 | Axios 1.x |
-| 路由 | Vue Router（已安装，尚未接入） |
+| 路由 | Vue Router 5（history 模式 + 全局守卫） |
 | 代码检查 | ESLint 10 + oxlint |
 | 开发插件 | vite-plugin-vue-devtools |
 | 包管理器 | npm |
@@ -22,11 +22,23 @@
 
 ## 功能
 
-- **用户查询**：输入用户 ID 后调用后端 `GET /users/{user_id}`，成功后渲染返回对象的所有字段。
-- **交互状态**：查询期间按钮禁用并显示「查询中...」；输入为空时提示「请输入用户 ID」；支持回车键触发查询。
-- **错误处理**：优先展示后端返回的 `detail` 字段（FastAPI `HTTPException` 的格式），其次 `err.message`，最后回退为「查询失败」。
+- **用户注册**：`/register` 提交用户名、密码、确认密码与年龄；校验用户名非空、年龄 ≥ 1、密码至少 6 位、两次密码一致。成功后提示并跳转登录页；后端 422 校验错误会提取 `detail` 数组第一条展示。
+- **用户登录**：`/login` 以 `application/x-www-form-urlencoded` 提交 `username` / `password`，成功后读取 `access_token` 写入 `localStorage` 并跳转 `/profile`；登录接口自身的 401 只在页面内展示错误，不触发全局跳转。
+- **路由守卫**：`src/router/index.js` 通过路由的 `requiresAuth` / `guestOnly` 元信息结合 `localStorage` 中的 token 控制访问。
+- **JWT 携带**：`src/api/http.js` 的请求拦截器在存在 token 时自动附加 `Authorization: Bearer <token>`。
+- **401 统一处理**：响应拦截器捕获非登录接口的 401，清除本地登录状态并派发 `auth:expired` 事件，`src/main.js` 监听后跳转 `/login`。
+- **个人中心**：`/profile` 挂载时调用 `GET /auth/me`，逐字段展示当前登录用户；「退出登录」清除 token 并返回登录页。
 - **请求封装**：`src/api/http.js` 创建统一的 Axios 实例，`baseURL` 读取环境变量 `VITE_API_BASE_URL`，超时 10 秒。
 - **开发体验**：Vite 热更新、Vue DevTools、`@` 别名指向 `src/`、oxlint + ESLint 双检查。
+
+## 页面路由
+
+| 路径 | 页面 | 访问控制 |
+| --- | --- | --- |
+| `/` | 重定向到 `/profile` | — |
+| `/login` | `src/views/LoginView.vue` | 已登录时跳转 `/profile` |
+| `/register` | `src/views/RegisterView.vue` | 已登录时跳转 `/profile` |
+| `/profile` | `src/views/ProfileView.vue` | 未登录时跳转 `/login` |
 
 ## 目录结构
 
@@ -34,12 +46,21 @@
 AI-frontend/
 ├── src/
 │   ├── api/
-│   │   ├── http.js              # Axios 实例：baseURL 来自环境变量，超时 10 秒
-│   │   └── users.js             # 用户接口：getUserById
+│   │   ├── http.js              # Axios 实例：环境变量 baseURL、10 秒超时、鉴权与 401 拦截器
+│   │   ├── auth.js              # 认证接口：registerUser / loginUser / getCurrentUser
+│   │   └── users.js             # 用户接口：getUserById（当前未挂载到页面）
 │   ├── components/
-│   │   └── UserSearch.vue       # 用户查询组件（输入、加载、错误、结果展示）
-│   ├── App.vue                  # 根组件
-│   └── main.js                  # 应用入口：创建并挂载 Vue 应用
+│   │   └── UserSearch.vue       # 用户查询组件（App.vue 中已注释，暂未使用）
+│   ├── router/
+│   │   └── index.js             # 路由表与登录守卫
+│   ├── utils/
+│   │   └── auth.js              # 登录状态：token / currentUser / setToken / setUser / clearAuth
+│   ├── views/
+│   │   ├── LoginView.vue        # 登录页
+│   │   ├── RegisterView.vue     # 注册页
+│   │   └── ProfileView.vue      # 个人中心
+│   ├── App.vue                  # 根组件：渲染 RouterView
+│   └── main.js                  # 应用入口：注册路由、监听 auth:expired
 │
 ├── public/
 │   └── favicon.ico              # 站点图标
@@ -108,31 +129,38 @@ npm run dev
 
 ## 后端对接
 
-前端当前只调用一个接口：
+前端当前调用的接口：
 
 | Method | Endpoint | 功能 | 认证 |
 | --- | --- | --- | --- |
-| GET | `/users/{user_id}` | 查询用户详情 | 当前前端未携带 |
+| POST | `/auth/register` | 注册新用户 | 否 |
+| POST | `/auth/login` | 表单登录，返回 JWT | 否 |
+| GET | `/auth/me` | 查询当前登录用户 | Bearer token |
+| GET | `/users/{user_id}` | 查询用户详情 | Bearer token（当前前端未挂载该页面） |
 
-- 请求地址为 `VITE_API_BASE_URL` + `/users/{user_id}`，例如 <http://localhost:8000/users/1>。
-- 成功时将 `response.data` 直接渲染为字段列表；FastAPI 的 `UserResponse` 返回 `id` / `name` / `age`。
-- 用户不存在时后端返回 404，页面展示响应中的 `detail`（如「未找到用户」）。
+- 登录请求体为 `application/x-www-form-urlencoded`（字段 `username` / `password`），对应 FastAPI 的 `OAuth2PasswordRequestForm`；前端从响应中读取 `access_token`。
+- 注册请求体为 JSON：`{ "name": "...", "password": "...", "age": 20 }`。
+- 请求地址为 `VITE_API_BASE_URL` + 接口路径，例如 <http://localhost:8000/auth/me>。
+- 个人中心将 `GET /auth/me` 的 `response.data` 直接渲染为字段列表。
 - 跨域：FastAPI-week2 已通过 CORS 允许 `http://localhost:5173` 与 `http://127.0.0.1:5173` 访问。
 
-> **⚠️ 认证注意**：FastAPI-week2 的 `/users` 路由整体挂载了 `get_current_user` 依赖，`GET /users/{user_id}` 需要请求头 `Authorization: Bearer <token>`。当前前端没有登录流程，Axios 也没有添加认证头，直接对接会返回 **401**。联调前需二选一：
->
-> 1. 后端临时移除该接口的认证依赖；
-> 2. 前端补充登录（`POST /auth/login`），并在 Axios 请求拦截器中统一携带 token。
+> **登录态说明**：token 保存在 `localStorage` 的 `access_token` 键中，路由守卫直接读取该键判断登录状态；`src/utils/auth.js` 中的 `token` ref 只在模块加载时初始化一次。
 
 ### 请求示例
 
 ```bash
-# 后端需已启动
-curl http://127.0.0.1:8000/users/1
+# 后端需已启动；先登录获取 token
+curl -X POST http://127.0.0.1:8000/auth/login \
+  -d "username=demo&password=123456"
+
+# 携带 token 查询当前用户
+curl http://127.0.0.1:8000/auth/me \
+  -H "Authorization: Bearer <token>"
 ```
 
 ## 待办 / 已知问题
 
-- [ ] 接入登录流程并为请求携带 JWT，解决 `/users/{user_id}` 的 401。
-- [ ] `vue-router` 已在依赖中安装，但 `src/main.js` 尚未注册路由，目前为单页应用。
+- [ ] `src/api/users.js` 与 `src/components/UserSearch.vue` 仍保留，但 `App.vue` 已改为只渲染 `RouterView`，暂未接入路由，后续决定删除或改为独立页面。
+- [ ] token 过期只依赖后端 401 被动退出，尚未解析 JWT 的 `exp` 做主动检查。
+- [ ] 注册成功使用原生 `alert` 提示，可替换为页面内提示。
 - [ ] 尚未配置单元测试或端到端测试。
