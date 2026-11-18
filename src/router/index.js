@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import ProfileView from '../views/ProfileView.vue'
+import UserListView from '@/views/UserListView.vue'
 
 const routes = [
   {
@@ -29,6 +30,14 @@ const routes = [
     path: '/profile',
     name: 'profile',
     component: ProfileView,
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
+    path: '/users',
+    name: 'users',
+    component: UserListView,
     meta: {
       requiresAuth: true
     }

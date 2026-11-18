@@ -1,6 +1,6 @@
 # AI Frontend
 
-一个用于练习前后端联调与登录鉴权的 Vue 3 前端项目。通过 Axios 调用 FastAPI 后端（默认 `http://localhost:8000`），提供用户注册、表单登录、JWT 携带、路由守卫和个人中心页面。
+一个用于练习前后端联调与登录鉴权的 Vue 3 前端项目。通过 Axios 调用 FastAPI 后端（默认 `http://localhost:8000`），提供用户注册、表单登录、JWT 携带、路由守卫、个人中心与用户管理页面。
 
 - 应用入口：`src/main.js`
 - 开发地址：<http://localhost:5173>
@@ -27,7 +27,9 @@
 - **路由守卫**：`src/router/index.js` 通过路由的 `requiresAuth` / `guestOnly` 元信息结合 `localStorage` 中的 token 控制访问。
 - **JWT 携带**：`src/api/http.js` 的请求拦截器在存在 token 时自动附加 `Authorization: Bearer <token>`。
 - **401 统一处理**：响应拦截器捕获非登录接口的 401，清除本地登录状态并派发 `auth:expired` 事件，`src/main.js` 监听后跳转 `/login`。
-- **个人中心**：`/profile` 挂载时调用 `GET /auth/me`，逐字段展示当前登录用户；「退出登录」清除 token 并返回登录页。
+- **个人中心**：`/profile` 挂载时调用 `GET /auth/me`，逐字段展示当前登录用户，并把结果写入 `useAuth()` 的 `currentUser`。
+- **用户管理**：`/users` 挂载时调用 `GET /users/` 展示用户卡片列表，支持手动刷新；页面内嵌 `UserSearch` 组件，可按用户 ID 调用 `GET /users/{user_id}` 查询单个用户。
+- **顶部导航**：登录后 `App.vue` 显示导航栏（用户管理 / 个人中心 / 退出登录），通过 `useAuth()` 的 `isLoggedIn` 响应式控制；「退出登录」调用 `clearAuth()` 清除状态并返回 `/login`。
 - **请求封装**：`src/api/http.js` 创建统一的 Axios 实例，`baseURL` 读取环境变量 `VITE_API_BASE_URL`，超时 10 秒。
 - **开发体验**：Vite 热更新、Vue DevTools、`@` 别名指向 `src/`、oxlint + ESLint 双检查。
 
@@ -39,6 +41,7 @@
 | `/login` | `src/views/LoginView.vue` | 已登录时跳转 `/profile` |
 | `/register` | `src/views/RegisterView.vue` | 已登录时跳转 `/profile` |
 | `/profile` | `src/views/ProfileView.vue` | 未登录时跳转 `/login` |
+| `/users` | `src/views/UserListView.vue` | 未登录时跳转 `/login` |
 
 ## 目录结构
 
@@ -48,18 +51,19 @@ AI-frontend/
 │   ├── api/
 │   │   ├── http.js              # Axios 实例：环境变量 baseURL、10 秒超时、鉴权与 401 拦截器
 │   │   ├── auth.js              # 认证接口：registerUser / loginUser / getCurrentUser
-│   │   └── users.js             # 用户接口：getUserById（当前未挂载到页面）
+│   │   └── users.js             # 用户接口：getUsers / getUserById / createUser / updateUser / deleteUser
 │   ├── components/
-│   │   └── UserSearch.vue       # 用户查询组件（App.vue 中已注释，暂未使用）
+│   │   └── UserSearch.vue       # 按用户 ID 查询组件（内嵌于 UserListView）
 │   ├── router/
 │   │   └── index.js             # 路由表与登录守卫
 │   ├── utils/
-│   │   └── auth.js              # 登录状态：token / currentUser / setToken / setUser / clearAuth
+│   │   └── auth.js              # useAuth 组合式函数：token / currentUser / isLoggedIn / setToken / setUser / clearAuth
 │   ├── views/
 │   │   ├── LoginView.vue        # 登录页
 │   │   ├── RegisterView.vue     # 注册页
-│   │   └── ProfileView.vue      # 个人中心
-│   ├── App.vue                  # 根组件：渲染 RouterView
+│   │   ├── ProfileView.vue      # 个人中心
+│   │   └── UserListView.vue     # 用户管理页：用户列表 + 用户查询
+│   ├── App.vue                  # 根组件：登录后顶部导航 + RouterView
 │   └── main.js                  # 应用入口：注册路由、监听 auth:expired
 │
 ├── public/
@@ -136,15 +140,17 @@ npm run dev
 | POST | `/auth/register` | 注册新用户 | 否 |
 | POST | `/auth/login` | 表单登录，返回 JWT | 否 |
 | GET | `/auth/me` | 查询当前登录用户 | Bearer token |
-| GET | `/users/{user_id}` | 查询用户详情 | Bearer token（当前前端未挂载该页面） |
+| GET | `/users/` | 查询用户列表 | Bearer token |
+| GET | `/users/{user_id}` | 按 ID 查询用户详情 | Bearer token |
 
 - 登录请求体为 `application/x-www-form-urlencoded`（字段 `username` / `password`），对应 FastAPI 的 `OAuth2PasswordRequestForm`；前端从响应中读取 `access_token`。
 - 注册请求体为 JSON：`{ "name": "...", "password": "...", "age": 20 }`。
 - 请求地址为 `VITE_API_BASE_URL` + 接口路径，例如 <http://localhost:8000/auth/me>。
-- 个人中心将 `GET /auth/me` 的 `response.data` 直接渲染为字段列表。
+- 个人中心将 `GET /auth/me` 的 `response.data` 直接渲染为字段列表；用户管理页同样逐字段渲染每个用户对象。
+- 列表接口路径为 `/users/`（带尾斜杠），`src/api/users.js` 另有 `createUser` / `updateUser` / `deleteUser` 封装，但当前没有页面调用。
 - 跨域：FastAPI-week2 已通过 CORS 允许 `http://localhost:5173` 与 `http://127.0.0.1:5173` 访问。
 
-> **登录态说明**：token 保存在 `localStorage` 的 `access_token` 键中，路由守卫直接读取该键判断登录状态；`src/utils/auth.js` 中的 `token` ref 只在模块加载时初始化一次。
+> **登录态说明**：token 保存在 `localStorage` 的 `access_token` 键中，路由守卫直接读取该键判断登录状态；页面内通过 `useAuth()` 的 `token` / `isLoggedIn` 响应式读取，`setToken` / `clearAuth` 会同步更新 ref 与 `localStorage`。
 
 ### 请求示例
 
@@ -160,7 +166,7 @@ curl http://127.0.0.1:8000/auth/me \
 
 ## 待办 / 已知问题
 
-- [ ] `src/api/users.js` 与 `src/components/UserSearch.vue` 仍保留，但 `App.vue` 已改为只渲染 `RouterView`，暂未接入路由，后续决定删除或改为独立页面。
+- [ ] `src/api/users.js` 中的 `createUser` / `updateUser` / `deleteUser` 尚无对应页面，用户管理目前只支持列表与按 ID 查询。
 - [ ] token 过期只依赖后端 401 被动退出，尚未解析 JWT 的 `exp` 做主动检查。
 - [ ] 注册成功使用原生 `alert` 提示，可替换为页面内提示。
 - [ ] 尚未配置单元测试或端到端测试。

@@ -3,13 +3,15 @@ import {ref} from 'vue'
 import { reactive } from 'vue'
 import { getUserById } from '../api/users'
 
-const userId = ref('1') //用户ID
+const userId = ref('') //用户ID
 const user = ref(null)
 const loading = ref(false)
 const error = ref('')
 
 
 async function searchUser(){
+    error.value = ''
+    user.value = null
     if(!userId.value.trim()){
         error.value = '请输入用户ID'
         return
@@ -27,7 +29,7 @@ async function searchUser(){
         error.value =
         err.response?.data?.detail ||
         err.message ||
-        '查询失败'
+        '用户查询失败'
     } finally {
         loading.value = false
     }
@@ -38,6 +40,7 @@ async function searchUser(){
 
 <template>
     <div class="user-search">
+      <h2>用户查询</h2>
     <div class="search-box">
       <input
         v-model="userId"
